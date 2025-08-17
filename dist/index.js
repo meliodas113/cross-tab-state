@@ -29,20 +29,37 @@ module.exports = __toCommonJS(src_exports);
 var import_react = require("react");
 function useCrossTabState(key, initialValue) {
   const [state, setState] = (0, import_react.useState)(() => {
-    const saved = localStorage.getItem(key);
-    return saved ? JSON.parse(saved) : initialValue;
+    try {
+      const saved = localStorage.getItem(key);
+      return saved ? JSON.parse(saved) : initialValue;
+    } catch (error) {
+      console.warn(
+        `Failed to parse localStorage value for key "${key}":`,
+        error
+      );
+      return initialValue;
+    }
   });
   const channelRef = (0, import_react.useRef)(null);
   (0, import_react.useEffect)(() => {
     const channel = new BroadcastChannel("cross-tab-state");
     channelRef.current = channel;
     channel.onmessage = (event) => {
-      if (event.data.key === key)
+      if (event.data.key === key) {
         setState(event.data.value);
+      }
     };
     const onStorage = (e) => {
-      if (e.key === key && e.newValue)
-        setState(JSON.parse(e.newValue));
+      if (e.key === key && e.newValue) {
+        try {
+          setState(JSON.parse(e.newValue));
+        } catch (error) {
+          console.warn(
+            `Failed to parse storage event value for key "${key}":`,
+            error
+          );
+        }
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => {
@@ -54,8 +71,22 @@ function useCrossTabState(key, initialValue) {
     setState((prev) => {
       var _a;
       const newValue = typeof value === "function" ? value(prev) : value;
-      localStorage.setItem(key, JSON.stringify(newValue));
-      (_a = channelRef.current) == null ? void 0 : _a.postMessage({ key, value: newValue });
+      try {
+        localStorage.setItem(key, JSON.stringify(newValue));
+      } catch (error) {
+        console.warn(
+          `Failed to save state to localStorage for key "${key}":`,
+          error
+        );
+      }
+      try {
+        (_a = channelRef.current) == null ? void 0 : _a.postMessage({ key, value: newValue });
+      } catch (error) {
+        console.warn(
+          `Failed to broadcast state change for key "${key}":`,
+          error
+        );
+      }
       return newValue;
     });
   };
@@ -63,12 +94,54 @@ function useCrossTabState(key, initialValue) {
 }
 
 // src/useCrossTabReducer.ts
-function useCrossTabReducer(key, reducer, initialState) {
-  const [state, setState] = useCrossTabState(key, initialState);
-  const dispatch = (action) => {
-    const newState = reducer(state, action);
-    setState(newState);
-  };
+var import_react2 = require("react");
+function useCrossTabReducer(reducer, initialState, key) {
+  const [state, setState] = (0, import_react2.useState)(() => {
+    try {
+      const stored = localStorage.getItem(key);
+      return stored ? JSON.parse(stored) : initialState;
+    } catch (error) {
+      console.warn(
+        `Failed to parse localStorage value for key "${key}":`,
+        error
+      );
+      return initialState;
+    }
+  });
+  const dispatch = (0, import_react2.useCallback)(
+    (action) => {
+      setState((prev) => {
+        const newState = reducer(prev, action);
+        try {
+          localStorage.setItem(key, JSON.stringify(newState));
+        } catch (error) {
+          console.warn(
+            `Failed to save state to localStorage for key "${key}":`,
+            error
+          );
+        }
+        return newState;
+      });
+    },
+    [key, reducer]
+    // Dependencies for useCallback - only recreate if key or reducer changes
+  );
+  (0, import_react2.useEffect)(() => {
+    const handler = (e) => {
+      if (e.key === key && e.newValue) {
+        try {
+          setState(JSON.parse(e.newValue));
+        } catch (error) {
+          console.warn(
+            `Failed to parse storage event value for key "${key}":`,
+            error
+          );
+        }
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, [key]);
   return [state, dispatch];
 }
 // Annotate the CommonJS export names for ESM import in node:
